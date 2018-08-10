@@ -1,0 +1,93 @@
+version: '2'
+services:
+ zabbix-server:
+  image: zabbix/zabbix-server-mysql:alpine-3.4-latest
+  ports:
+   - "10051:10051"
+  volumes:
+   - /etc/localtime:/etc/localtime:ro
+   - /etc/timezone:/etc/timezone:ro 
+   - ./zbx_env/usr/lib/zabbix/alertscripts:/usr/lib/zabbix/alertscripts:ro
+   - ./zbx_env/usr/lib/zabbix/externalscripts:/usr/lib/zabbix/externalscripts:ro
+   - ./zbx_env/var/lib/zabbix/modules:/var/lib/zabbix/modules:ro
+   - ./zbx_env/var/lib/zabbix/enc:/var/lib/zabbix/enc:ro
+   - ./zbx_env/var/lib/zabbix/ssh_keys:/var/lib/zabbix/ssh_keys:ro
+   - ./zbx_env/var/lib/zabbix/mibs:/var/lib/zabbix/mibs:ro
+  volumes_from:
+   - zabbix-snmptraps:ro
+  links:
+   - mysql-server:mysql-server
+   - zabbix-java-gateway:zabbix-java-gateway
+  ulimits:
+   nproc: 65535
+   nofile:
+    soft: 20000
+    hard: 40000
+  mem_limit: 512m
+  env_file:
+   - .env_db_mysql
+   - .env_srv
+
+ zabbix-web-nginx-mysql:
+  image: zabbix/zabbix-web-nginx-mysql:alpine-3.4-latest
+  ports:
+   - "8081:80"
+   - "8443:443"
+  links:
+   - mysql-server:mysql-server
+   - zabbix-server:zabbix-server
+  mem_limit: 512m
+  volumes:
+   - /etc/localtime:/etc/localtime:ro
+   - /etc/timezone:/etc/timezone:ro
+   - ./zbx_env/etc/ssl/nginx:/etc/ssl/nginx:ro
+   - ./simkai.ttf:/usr/share/zabbix/fonts/graphfont.ttf:ro
+  env_file:
+   - .env_db_mysql
+   - .env_web
+
+ zabbix-agent:
+  image: zabbix/zabbix-agent:alpine-3.4-latest
+  ports:
+   - "10050:10050"
+  volumes:
+   - /etc/localtime:/etc/localtime:ro
+   - /etc/timezone:/etc/timezone:ro
+   - ./zbx_env/etc/zabbix/zabbix_agentd.d:/etc/zabbix/zabbix_agentd.d:ro
+   - ./zbx_env/var/lib/zabbix/modules:/var/lib/zabbix/modules:ro
+   - ./zbx_env/var/lib/zabbix/enc:/var/lib/zabbix/enc:ro
+   - ./zbx_env/var/lib/zabbix/ssh_keys:/var/lib/zabbix/ssh_keys:ro
+  links:
+   - zabbix-server:zabbix-server
+  env_file:
+   - .env_agent
+  privileged: true
+  pid: "host"
+
+ zabbix-java-gateway:
+   image: zabbix/zabbix-java-gateway:alpine-3.4-latest
+   ports:
+    - "10052:10052"
+   env_file:
+    - .env_java
+ 
+ zabbix-snmptraps:
+   image: zabbix/zabbix-snmptraps:alpine-3.4-latest
+   ports:
+    - "162:162/udp"
+   volumes:
+    - ./zbx_env/var/lib/zabbix/snmptraps:/var/lib/zabbix/snmptraps:rw
+
+ mysql-server:
+  image: mysql:5.7
+  command: [mysqld, --character-set-server=utf8, --collation-server=utf8_bin]
+  volumes_from:
+    - db_data_mysql
+  volume_driver: local
+  env_file:
+   - .env_db_mysql
+
+ db_data_mysql:
+    image: busybox
+    volumes:
+    - ./zbx_env/var/lib/mysql:/var/lib/mysql:rw
